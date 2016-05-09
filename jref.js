@@ -1,7 +1,7 @@
 JSON._parse = JSON.parse;
 JSON.parse = function() {
 	var gp = this._parse.apply(this, arguments),
-	findrefs = function(obj) {
+		findrefs = function(obj) {
 		var keys = Object.keys(obj);
 		keys.forEach(function(key) {
 			if(typeof obj[key] === 'string' && obj[key].substr(0, 5) === 'jref:') {
