@@ -1,79 +1,69 @@
-JSON._parse = JSON.parse;
-JSON.parse = function() {
-	var gp = this._parse.apply(this, arguments),
-		findrefs = function(obj) {
-		var keys = Object.keys(obj);
-		keys.forEach(function(key) {
-			if(typeof obj[key] === 'string' && obj[key].substr(0, 5) === 'jref:') {
-				var ref = obj[key].split(':')[1].replace('this', 'gp'),
-					val = eval(ref);
-				if(typeof val === 'object') {
-					obj[key] = val;
-				}
-				else {
-					obj.__defineGetter__(key, eval('(function() { return ' + ref + '; })'));
-					obj.__defineSetter__(key, eval('(function(val) { return ' + ref + ' = val; })'));
-				}
-			}
-			else if(typeof obj[key] === 'object') {
-				findrefs(obj[key]);
-			}
-		});
+;(function() {
+	"use strict";
+	var root;
+	if(this.exports) {
+		root = this.exports;
 	}
-	findrefs(gp);
-	return gp;
-}
+	else {
+		root = this.JREF = {};
+	}
+	root.parse = function(str) {
+		var pointers = [];
+		var tmp = JSON.parse(str, function(key, val) {
+			if(typeof val === 'string' && val.substr(0, 7) === '__jref:') {
+				pointers.push({obj: this, key: key, ref: val.substr(7).split('.')});
+			}
+			return val;
+		});
 
-JSON._stringify = JSON.stringify;
-JSON.stringify = function(obj) {
-	var gp = obj,
-		dictionary = [
-			{obj: gp, path: 'this', refs_to: []}
-		],
-		findrefs = function(obj, path) {
-			var keys = Object.keys(obj),
-				tmp;
-			keys.forEach(function(key) {
-				if(typeof obj[key] === 'object') {
-					var registred = false;
-					dictionary.every(function(dict) {
-						if(obj[key] === dict.obj) {
-							dict.refs_to.push(path+'.'+key);
-							if((path+'.'+key).split('.').length < dict.path.split('.').length) {
-								dict.refs_to.push(dict.path);
-								dict.path = path+'.'+key;
-							}
-							registred = true;
-							return false;
-						}
-						return true;
-					});
-					if(registred === false) {
-						dictionary.push({
-							obj: obj[key],
-							path: path+'.'+key,
-							refs_to: []
-						});
-						if(typeof obj[key] === 'object') {
-							findrefs(obj[key], path+'.'+key);
-						}
+		pointers.forEach(pointer => pointer.obj[pointer.key] = [tmp].concat(pointer.ref.slice(1)).reduce((carry, item) => carry[item]));
+		
+		return tmp;
+	}
+	root.unRef = function(obj) {
+		var result = obj.constructor();
+		var work = [
+			{
+				path: [],
+				obj: obj,
+				res: result
+			}
+		];
+		
+		for(var i = 0; i < work.length; i++) {
+			Object.keys(work[i].obj).forEach(key => {
+				if(typeof work[i].obj[key] === 'object' && work[i].obj[key] !== null) {
+					if(!work[i].res[key]) {
+						work[i].res[key] = work[i].obj[key].constructor();
+					}
+					let workItem = {
+						path: work[i].path.concat(key),
+						obj: work[i].obj[key],
+						res: work[i].res[key]
+					};
+					let registered = work.filter(entry => entry.obj === workItem.obj);
+					if(registered.length === 0) {
+						work.push(workItem);
+					}
+					else {
+						work[i].res[key] = '__jref:' + ['this'].concat(registered[0].path).join('.');
 					}
 				}
 				else {
-					if(obj.__lookupGetter__(key)) {
-						tmp = obj.__lookupGetter__(key).toString().split('return ')[1].split(';')[0].replace('gp.', 'this.');
-						delete obj[key];
-						obj[key] = 'jref:'+tmp;
-					}
+					work[i].res[key] = work[i].obj[key];
 				}
 			});
-		};
-	findrefs(gp, 'this');
-	
-	dictionary.forEach(function(dict) {
-		dict.refs_to.forEach(function(ref) {
-			eval('gp.' + ref.substr(ref.indexOf('.') + 1) + '=\'jref:' + dict.path + '\'');
-		});
-	});
-	return this._stringify.call(this, gp);
-}
+		}
+		return result;
+	}
+	root.stringify = function(obj) {
+		return JSON.stringify(this.unRef(obj));
+	}
+
+	function isNumeric(n) {
+		return !isNaN(parseFloat(n)) && isFinite(n);
+	}
+	function isInteger(n) {
+		return isNumeric(n) && Number.isInteger(parseFloat(n));
+	}
+}).call(typeof module !== 'undefined' && module.exports ? module : this);
