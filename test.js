@@ -1,4 +1,3 @@
-console.clear();
 const util = require('util');
 const JREF = require('./jref.js');
 
